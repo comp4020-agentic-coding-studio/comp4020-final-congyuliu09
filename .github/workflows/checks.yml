@@ -36,9 +36,10 @@ jobs:
         # run (the real deploy's is a Fly secret, set once by hand, never in
         # this file) so the /logs-is-gated spec test has something to check.
         run: |
-          echo "LOGS_TOKEN=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+          token=$(openssl rand -hex 16)
+          echo "LOGS_TOKEN=$token" >> "$GITHUB_ENV"
           docker build -t app .
-          docker run -d --init --name app -p 8080:8080 -e PORT=8080 -e LOGS_TOKEN="$LOGS_TOKEN" --tmpfs /data app
+          docker run -d --init --name app -p 8080:8080 -e PORT=8080 -e LOGS_TOKEN="$token" --tmpfs /data app
       - name: Run the spec
         run: pnpm check
         env:
