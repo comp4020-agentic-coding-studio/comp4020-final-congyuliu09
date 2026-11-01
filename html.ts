@@ -28,7 +28,7 @@ export function page(title: string, body: string): string {
     </style>
   </head>
   <body>
-    <nav><a href="/">Inspections</a><a href="/readme/">About</a></nav>
+    <nav><a href="/">Inspections</a><a href="/readme/">About</a><a href="/logs">Activity log</a></nav>
     ${body}
   </body>
 </html>`;

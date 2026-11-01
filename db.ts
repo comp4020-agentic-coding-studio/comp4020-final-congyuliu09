@@ -9,6 +9,7 @@ export interface Inspection {
   model: string;
   year: number;
   odometer: number;
+  owner_id: string;
   created_at: string;
 }
 
@@ -21,6 +22,15 @@ export interface Finding {
   created_at: string;
 }
 
+export interface ActivityEntry {
+  id: string;
+  actor_id: string;
+  action: string;
+  inspection_id: string | null;
+  detail: string;
+  created_at: string;
+}
+
 export function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path);
   db.exec(`
@@ -30,6 +40,7 @@ export function openDb(path: string): DatabaseSync {
       model      TEXT NOT NULL,
       year       INTEGER NOT NULL,
       odometer   INTEGER NOT NULL,
+      owner_id   TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
 
@@ -41,13 +52,30 @@ export function openDb(path: string): DatabaseSync {
       severity      TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high')),
       created_at    TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id            TEXT PRIMARY KEY,
+      actor_id      TEXT NOT NULL,
+      action        TEXT NOT NULL,
+      inspection_id TEXT,
+      detail        TEXT NOT NULL,
+      created_at    TEXT NOT NULL
+    );
   `);
+
+  // Deployed volumes predate owner_id (crit 8 shipped without it); add it to
+  // whatever's already on disk rather than losing the data under it.
+  const inspectionCols = db.prepare("PRAGMA table_info(inspections)").all() as { name: string }[];
+  if (!inspectionCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE inspections ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''");
+  }
+
   return db;
 }
 
 export function createInspection(
   db: DatabaseSync,
-  fields: { make: string; model: string; year: number; odometer: number },
+  fields: { make: string; model: string; year: number; odometer: number; owner_id: string },
 ): Inspection {
   const inspection: Inspection = {
     id: randomUUID(),
@@ -55,20 +83,23 @@ export function createInspection(
     created_at: new Date().toISOString(),
   };
   db.prepare(
-    "INSERT INTO inspections (id, make, model, year, odometer, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO inspections (id, make, model, year, odometer, owner_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(
     inspection.id,
     inspection.make,
     inspection.model,
     inspection.year,
     inspection.odometer,
+    inspection.owner_id,
     inspection.created_at,
   );
   return inspection;
 }
 
-export function listInspections(db: DatabaseSync): Inspection[] {
-  return db.prepare("SELECT * FROM inspections ORDER BY created_at DESC").all() as unknown as Inspection[];
+export function listInspections(db: DatabaseSync, ownerId: string): Inspection[] {
+  return db
+    .prepare("SELECT * FROM inspections WHERE owner_id = ? ORDER BY created_at DESC")
+    .all(ownerId) as unknown as Inspection[];
 }
 
 export function getInspection(db: DatabaseSync, id: string): Inspection | undefined {
@@ -101,4 +132,28 @@ export function addFinding(
     finding.created_at,
   );
   return finding;
+}
+
+// Server-side record of who did what, independent of the in-memory process:
+// written on every mutation, outlives a restart, and is what a crit's "narrate
+// from the logs" demand reads from — never the UI.
+export function logActivity(
+  db: DatabaseSync,
+  fields: { actor_id: string; action: string; inspection_id: string | null; detail: string },
+): ActivityEntry {
+  const entry: ActivityEntry = {
+    id: randomUUID(),
+    ...fields,
+    created_at: new Date().toISOString(),
+  };
+  db.prepare(
+    "INSERT INTO activity_log (id, actor_id, action, inspection_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(entry.id, entry.actor_id, entry.action, entry.inspection_id, entry.detail, entry.created_at);
+  return entry;
+}
+
+export function listRecentActivity(db: DatabaseSync, limit = 200): ActivityEntry[] {
+  return db
+    .prepare("SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?")
+    .all(limit) as unknown as ActivityEntry[];
 }
