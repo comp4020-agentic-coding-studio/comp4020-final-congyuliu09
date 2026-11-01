@@ -16,8 +16,8 @@ fleet-inspection tool: one inspection at a time, low stakes if it's rough.
 
 - **Nothing gets lost.** An inspection and its findings survive a closed tab,
   a day's gap, a container restart. Enforced in
-  [`spec/inspections.test.ts`](spec/inspections.test.ts): create, add a
-  finding, read it back through a fresh request.
+  [`spec/inspections.test.ts`](spec/inspections.test.ts): create, add, reread
+  through a fresh request.
 - **Each visitor sees only their own inspections.** "Multi-user" means an
   anonymous cookie, set on first visit, that the app trusts as "this
   person" — no accounts, since the people this app is for don't need one.
@@ -31,9 +31,11 @@ fleet-inspection tool: one inspection at a time, low stakes if it's rough.
   by a test that opens the stream, adds a finding from a second request, and
   asserts the event arrives within two seconds.
 - **Every mutation is logged server-side, and the log outlives the UI.**
-  `/logs` lists who (a short, non-secret visitor tag) did what, written to
-  the same SQLite file the inspections live in, so it survives a restart and
-  reads without clicking through anyone's session.
+  Written to the same SQLite file the inspections live in, so it survives a
+  restart and reads without clicking through anyone's session. `/logs` is
+  gated behind a token, not open to any visitor: it lists every inspection's
+  findings across every owner, so leaving it unauthenticated would undo the
+  per-visitor isolation above.
 - **Severity is visible at a glance; entry is fast, standing next to the
   car.** Carried over from week 9: severity is a small, fixed vocabulary
   rather than free text, and the two forms ask only what's needed to tell

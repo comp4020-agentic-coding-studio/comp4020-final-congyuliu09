@@ -122,12 +122,20 @@ it("404s a visitor viewing or adding to someone else's inspection — authorizat
   expect(html).not.toContain("shouldn't be able to add this");
 });
 
-it("records mutations in the server-side activity log", async () => {
+it("records mutations in the server-side activity log, gated behind the logs token", async () => {
   const visitor = new Visitor();
   const path = await visitor.createInspection({ make: "Kia", model: "Sportage", year: "2021", odometer: "8000" });
   await visitor.addFinding(path, { category: "windscreen chip", description: "small chip, driver side", severity: "medium" });
 
-  const logs = await fetch(new URL("/logs", baseUrl));
+  // No token, or the wrong one, 404s — /logs holds every visitor's findings,
+  // not just this test's, so it can't be open the way an inspection page is.
+  const noToken = await fetch(new URL("/logs", baseUrl));
+  expect(noToken.status).toBe(404);
+  const wrongToken = await fetch(new URL("/logs?token=wrong", baseUrl));
+  expect(wrongToken.status).toBe(404);
+
+  const logsToken = inject("logsToken");
+  const logs = await fetch(new URL(`/logs?token=${encodeURIComponent(logsToken)}`, baseUrl));
   expect(logs.status).toBe(200);
   const html = await logs.text();
   expect(html).toContain("create_inspection");

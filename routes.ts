@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import { escapeHtml, markdownToHtml, page } from "./html.ts";
 import {
   addFinding,
@@ -21,6 +22,21 @@ const SEVERITIES: Severity[] = ["low", "medium", "high"];
 // random id, so pasting a log line doesn't hand out someone else's cookie.
 function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+// The activity log exists for crit 10's "narrate from the logs" demand — the
+// person running the app, not every visitor. Findings are low-stakes, but
+// they're still a stranger's private notes about a specific car; publishing
+// everyone's at an unauthenticated URL would undo the same per-visitor
+// isolation the rest of the app enforces. A shared token (set once as an
+// env var, never committed) gates it instead of a second account system.
+function hasLogsAccess(url: URL): boolean {
+  const required = process.env.LOGS_TOKEN;
+  if (!required) return false; // no token configured: nobody gets the log, not everybody
+  const supplied = url.searchParams.get("token") ?? "";
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(required);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -230,6 +246,10 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse, d
   }
 
   if (method === "GET" && pathname === "/logs") {
+    // No token configured, or the wrong one: 404, not 401/403 — same reasoning
+    // as inspection ownership, this page shouldn't confirm its own existence
+    // to someone who hasn't got the token.
+    if (!hasLogsAccess(url)) return notFound(res);
     return send(res, 200, logsPage(db));
   }
 

@@ -28,6 +28,14 @@ where it lives --- `fly.toml`, the `Dockerfile`, the CI workflow and
   session. This is what crit 10's "narrate from the logs" demand reads from;
   a mutation that doesn't call `logActivity` is invisible to that narration
   and is a bug, not a style choice.
+- **`/logs` is gated behind `LOGS_TOKEN`, 404ing (not 401/403) without it.**
+  The log holds every visitor's findings across every owner, so leaving it
+  open the way an inspection page is would undo the isolation rule above for
+  the one page that shows everyone's data at once. The token is a Fly secret
+  on the deployed app (`flyctl secrets set LOGS_TOKEN=...`), never committed;
+  CI generates a throwaway one per run so the gating test has something to
+  check. If a route ever needs to show cross-visitor data again, gate it the
+  same way rather than leaving it open "because it's low-stakes."
 - **Visitor identity is a plain cookie, not a secret.** `shortId()` in
   `routes.ts` is the only form a visitor id should ever appear in HTML or
   logs --- the full id is enough to view that visitor's data (there's no

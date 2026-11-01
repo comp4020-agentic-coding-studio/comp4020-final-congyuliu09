@@ -3,6 +3,7 @@ import type { TestProject } from "vitest/node";
 declare module "vitest" {
   export interface ProvidedContext {
     baseUrl: string;
+    logsToken: string;
   }
 }
 
@@ -30,4 +31,11 @@ export default async function setup(project: TestProject): Promise<void> {
   }
 
   project.provide("baseUrl", baseUrl);
+
+  // The running app needs the same LOGS_TOKEN set when it started (CI's
+  // docker run, or your own `node server.ts`) for the /logs test to pass —
+  // if it's unset there, this is also unset and that test's 200 case fails,
+  // which is the correct failure: an unconfigured token means /logs 404s for
+  // everyone, which is the same thing the test is checking either side of.
+  project.provide("logsToken", process.env.LOGS_TOKEN ?? "");
 }
