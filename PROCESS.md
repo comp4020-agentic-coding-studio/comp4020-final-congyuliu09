@@ -1,88 +1,112 @@
 # Process overview
 
-This is the week 9 (crit 8) version. It gets rewritten, not appended to, at
-each of the crit 9 and crit 10 cutoffs so it always describes the project as
-it currently stands.
+This is the week 12 (final) version, rewritten rather than appended to, so it
+describes the project as it currently stands: crit 8's slice plus real-time
+(crit 9) and multi-user/authorization/logging (crit 10), built in one pass at
+the week 12 studio session after the crit 9 and crit 10 sessions themselves
+had already run without the corresponding commits landing. The honest account
+of that gap, and how the remaining work was directed and checked, is below.
 
 ## From the brief to this slice
 
 The [final project brief](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/assessments/final-project/)
-leaves what to build entirely open; [crit 8](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/08-its-alive/)
-only asks for proof of life. I picked CarCheck — a single-person tool for
-recording a used-car inspection (vehicle details, then a list of findings each
-with a category and severity) — and scoped crit 8 down to one slice: create an
-inspection, add findings, persist them, and see them again on a later,
-independent visit. Multi-user, realtime, auth, photos and export are
-explicitly later crits' problems, not missing features of this one.
+fixes three things --- multi-user, real-time, persistent --- and leaves
+everything else, including what "good" means, to the student. Crit 8 scoped
+down to proof of life: create an inspection, add findings, persist them. Crit
+9 ([`All at once`](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/09-all-at-once/))
+asks for real-time and one written decision about multi-person behaviour.
+Crit 10 ([`Fly by instruments`](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/crits/10-fly-by-instruments/))
+asks for multi-user with server-side authorization and server-side logging
+that outlives the crit. All three requirements now exist in one build: an
+anonymous per-browser cookie identifies a visitor, inspections are scoped to
+their owner, findings on an open inspection page push to every other open
+session on that same inspection within about a second over Server-Sent
+Events, and every mutation writes a row to a SQLite `activity_log` table
+readable at `/logs`.
 
-## Stack decision
+## The gap, and how it was closed
 
-**Plain Node.js: `node:http` + `node:sqlite`, server-rendered HTML, no
-framework, no client JS, no build step.** Reasoning, in order of how much it
-mattered:
+Crit 8's five commits (through [`3aa801b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-congyuliu09/commit/3aa801b))
+shipped the persistence slice and a first README. The crit 9 and crit 10
+sessions ran in the following weeks with nothing committed against their
+specs --- no real-time, no authorization, no `reflections/crit-9.md` or
+`crit-10.md`. Rather than invent a history that didn't happen, this account
+says so directly: the remaining three fixed requirements (real-time,
+multi-user, the decisions each spec asks to be written down) were designed
+and built together at the week 12 cutoff, against both crit specs at once,
+not incrementally across the weeks they were due. The reflections for both
+crits were written honestly against that timeline rather than backdated.
 
-1. The slice is 2 tables and 5 routes. A framework (Express/Hono) or an ORM
-   (Prisma/Drizzle) buys routing and query-building conveniences this slice
-   is too small to need — hand-rolling both is a page of code, not a
-   maintenance burden, at this size.
-2. `node:sqlite` writes straight to a file on the `/data` volume, which is the
-   one thing `fly.toml` promises survives a restart or redeploy. That's
-   exactly the persistence the spec asks for, with no second service to fit
-   inside the 256 MB machine.
-3. Zero new runtime dependencies at all (only `devDependencies` the template
-   already shipped are used, for typecheck/test). Smaller image, closer to
-   the course's "small web" framing, and nothing to update or audit later.
-4. Node 24 (pinned in `mise.toml`) runs `.ts` files directly and the
-   template's `tsconfig.json` already assumed that (`allowImportingTsExtensions`),
-   so there's no bundler or transpile step to configure either.
+The stack itself didn't change from week 9's decision (plain `node:http` +
+`node:sqlite`, no framework, no client-side build): real-time and
+authorization both fit inside it without a new runtime dependency, which was
+the strongest argument for that stack in the first place. SSE needs nothing
+`node:http` doesn't already provide (a long-lived response with the right
+headers), and authorization is a single equality check against a column
+already on the `inspections` table. If anything, the lack of a framework made
+these additions more legible, not less: there's no middleware chain to trace
+to find where a check should live, just the route handler itself.
 
-**Trade-off, written down rather than discovered the hard way:** no framework
-means no built-in router, so route matching is four `if`s and two regexes in
-[`routes.ts`](routes.ts). That's fine at 5 routes; if crit 9's realtime
-requirement pushes the route count up a lot, revisiting this is the first
-thing I'd do, and I'd write a new record here saying why, per the brief's
-[architecture decision record](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
-suggestion. The other near-term pressure point is realtime itself: plain
-`node:http` can take a raw WebSocket upgrade without adding a framework, so
-this choice isn't a dead end for crit 9, just not solved yet.
+## Decisions made, and why
 
-## Schema
+**Identity is an anonymous cookie, not an account.** "Multi-user" only
+requires that the app tell people apart, not that it know who they are.
+Given the brief's framing ("one street, one book club, one afternoon" is
+on-brief), a cookie set on first visit is the smallest honest answer: no
+password, no email, and it still satisfies "two people, each in their own
+browser, act on shared state, and the app tells them apart" exactly as
+specified. The cost, written down rather than hidden, is that one inspecting
+pair sharing one device shares one identity --- the README names this as a
+deliberate non-goal rather than a gap.
 
-`inspections` carries vehicle details directly (make/model/year/odometer) —
-no separate `vehicles` table, since nothing in this slice's scope reuses a
-vehicle across inspections yet. `findings` references an inspection and has a
-closed, checked `severity` enum (`low`/`medium`/`high`) but a free-text
-`category`, since the category vocabulary isn't closed by anything in scope
-([`db.ts`](db.ts)).
+**Authorization denies by 404, not 403.** Every per-inspection route now
+checks `inspection.owner_id === visitorId` before doing anything else
+(`routes.ts`), and a mismatch returns the same `notFound()` an unknown id
+would. This was chosen over a 403 or a "not your inspection" message because
+a 403 confirms the id exists for someone, which is itself information a
+stranger probing ids shouldn't get. `CLAUDE.md` now states this rule
+explicitly so a future change to the routes doesn't regress it silently.
+
+**Real-time is Server-Sent Events, scoped per-inspection, not a global
+broadcast.** Considered WebSockets and polling; SSE was chosen because the
+traffic is one-directional (server to client) and `node:http` serves it with
+no new dependency, which matters on a 256 MB machine with zero runtime
+dependencies already a stated constraint from week 9. Subscribers are kept in
+a `Map<inspectionId, Set<ServerResponse>>` (`live.ts`) rather than one global
+set, so a visitor's open tab is only woken for the one inspection it's
+looking at --- the one written-down decision crit 9 asks for.
+
+**The activity log is a DB table, not console output.** `logActivity`
+(`db.ts`) writes a row on every mutation, in the same request that performs
+it, to the same SQLite file as the inspections. This is what crit 10's
+"narrate from the logs, no clicking through your own UI" demand needs: a
+durable, queryable record independent of the server process's memory, not
+something that would vanish on restart or require tailing a container's
+stdout.
 
 ## Agentic workflow
 
-I described the app (CarCheck, the entities, the exact crit-8 scope list
-including what to leave out) and asked the agent to propose the stack and
-schema before writing any code, rather than scaffold immediately — that
-proposal is the "Stack decision" and "Schema" sections above, which I reviewed
-and approved before anything was written
-([`054159b`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-congyuliu09/commit/054159b)
-is the first commit that followed from it). I grounded the build at each
-step rather than trusting it blind: the agent ran `pnpm typecheck` after
-scaffolding, started the app locally against a scratch data directory, and
-drove it with `curl` (create an inspection, add two findings, kill the
-process, restart it against the same directory, confirm the data was still
-there) *before* writing the persistence spec test or committing — so the
-"it's alive" claim was checked against a real running process, not just
-asserted. `pnpm check` (
-[`a77e050`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-congyuliu09/commit/a77e050))
-automates exactly that same check (create → add finding → fresh, independent
-request) so it doesn't depend on me re-running curl by hand next week.
+The agent was given the full gap above --- what crit 8 shipped, what crit 9
+and crit 10 asked for, that neither had been built --- and asked to design
+the identity, authorization and real-time model before writing code, the same
+grounding discipline as week 9. Each decision above was proposed, reviewed,
+and only then implemented. Grounding was done by running the app locally
+against a scratch data directory and driving it with `curl`: creating an
+inspection as one cookie, confirming a second, unrelated cookie gets 404 on
+the same inspection id (not silent failure, not success), then opening the
+SSE stream and watching a `finding` event arrive after a `curl` POST from a
+second terminal --- before any of this was written as an automated spec test.
+`pnpm check` now automates exactly those three checks (persistence,
+cross-visitor isolation, real-time delivery within two seconds) so they
+don't depend on repeating the manual walkthrough.
 
-Nothing needed correcting in `CLAUDE.md` or `spec/` this week — the scope was
-specified precisely up front (the exact create/persist/reload list, and the
-explicit exclusions), so there wasn't a wrong turn to catch after the fact.
-`CLAUDE.md` is still the template's empty arrival state; it starts picking up
-real rules once crit 9's realtime work gives me something concrete to hold
-the agent to (e.g. "every mutation must reach every other open session within
-~1s"), rather than rules invented ahead of having a reason for them.
+One correction landed in the harness rather than being silently retried: the
+agent's first authorization draft returned a 403 for a mismatched owner,
+which was corrected to 404 once the "don't confirm an id exists" reasoning
+was worked through, and `CLAUDE.md` now states the 404-not-403 rule so it
+can't quietly regress.
 
-## This week's reflection
+## This week's reflections
 
-[`reflections/crit-8.md`](reflections/crit-8.md).
+[`reflections/crit-9.md`](reflections/crit-9.md),
+[`reflections/crit-10.md`](reflections/crit-10.md).
