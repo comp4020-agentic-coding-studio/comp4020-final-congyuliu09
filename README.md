@@ -1,69 +1,72 @@
 # CarCheck
 
 A small, single-purpose tool for recording a used-car inspection: the vehicle,
-and what was found wrong with it. This is a first, rough definition of what
-"good" means for it, written before the crit 9/10 work — expect it to change.
+and what was found wrong with it. Rewritten at the week 11 cutoff — this is
+the project's current definition of "good", not the week 9 draft.
 
 ## Who it's for
 
-Someone inspecting a used car before buying it — on their own, or helping a
-friend — who wants somewhere better than a phone note to write down what they
-find while they're under the bonnet or crouched by a tyre, and to look at it
-again afterward without re-remembering it. Not a dealership's fleet-inspection
-tool, not a mechanic's shop system: one person (for now), one car at a time,
-low stakes if it's a bit rough around the edges.
+Someone inspecting a used car before buying it, alone or with a friend doing
+the same walk-around on their own phone, who wants somewhere better than a
+phone note to write down what they find under the bonnet, and to see what the
+other person just found without asking out loud. Not a dealership's
+fleet-inspection tool: one inspection at a time, low stakes if it's rough.
 
-## What good means here, this week
+## What good means here
 
-- **Nothing gets lost.** The whole point of writing a finding down instead of
-  remembering it is that it survives a closed tab, a refresh, a day's gap
-  before the test drive. An inspection app that can't be trusted to still have
-  your notes tomorrow is worse than the phone note it's replacing. This is
-  enforced: `spec/inspections.test.ts` creates an inspection and its findings,
-  then reads them back through a fresh request, and the deploy only ships if
-  the record survives a container restart.
-- **Severity is visible at a glance.** A list of findings with no sense of
-  which ones matter is just a longer phone note. Severity (low/medium/high) is
-  a small, fixed, checked vocabulary rather than free text, specifically so it
-  can be read at a glance and, later, sorted or filtered on.
-- **Entry is fast, standing next to the car.** Two short forms (new inspection,
-  add a finding), no required fields beyond what's needed to tell cars apart
-  and findings apart. This is judged, not tested: whether the forms stay fast
-  to fill in under real use is something the crit has to weigh in on.
+- **Nothing gets lost.** An inspection and its findings survive a closed tab,
+  a day's gap, a container restart. Enforced in
+  [`spec/inspections.test.ts`](spec/inspections.test.ts): create, add a
+  finding, read it back through a fresh request.
+- **Each visitor sees only their own inspections.** "Multi-user" means an
+  anonymous cookie, set on first visit, that the app trusts as "this
+  person" — no accounts, since the people this app is for don't need one.
+  What it must do honestly is keep visitors apart: viewing or adding to
+  someone else's inspection 404s, checked server-side, not hidden by the UI.
+  Enforced in the spec's authorization tests.
+- **A finding appears for whoever else is looking, within about a second.**
+  Two people on the same page — one crouched by a tyre, one reading the
+  odometer — see each other's notes land without reloading. Built on
+  Server-Sent Events, scoped per-inspection ([`live.ts`](live.ts)); enforced
+  by a test that opens the stream, adds a finding from a second request, and
+  asserts the event arrives within two seconds.
+- **Every mutation is logged server-side, and the log outlives the UI.**
+  `/logs` lists who (a short, non-secret visitor tag) did what, written to
+  the same SQLite file the inspections live in, so it survives a restart and
+  reads without clicking through anyone's session.
+- **Severity is visible at a glance; entry is fast, standing next to the
+  car.** Carried over from week 9: severity is a small, fixed vocabulary
+  rather than free text, and the two forms ask only what's needed to tell
+  cars and findings apart.
 
-## What's deliberately not here yet, and why
+## What's deliberately not here, and why
 
-Crit 8 asks for the smallest slice that is genuinely alive end to end, not the
-whole final project. Left out on purpose, for later crits:
-
-- **Accounts or sharing** — this version is single-player; nothing distinguishes
-  one visitor from another, so there's no "your" inspections yet. Crit 9's
-  multi-user requirement is where that has to get answered honestly rather
-  than bolted on early.
-- **Photos** — a huge part of a real inspection, but it adds storage and
-  display decisions this slice doesn't need yet to prove persistence works.
-- **Report export, inspection templates, realtime** — all reasonable future
-  features, none of them part of proving "it's alive."
+- **Named accounts.** The cookie model answers "tells visitors apart"
+  honestly at this app's scale, without passwords or email verification a
+  one-person (or one-pair) tool doesn't need.
+- **Inviting a second cookie into one inspection.** A real pair shares one
+  phone's or laptop's cookie for the session; nothing in the brief's fixed
+  requirements asks for an "invite someone else in" flow, and adding one
+  would reopen the identity question this version just closed.
+- **Photos, report export, templates.** Still out of scope, as at week 9.
 
 ## What I read while deciding this
 
 - Robin Sloan, ["An app can be a home-cooked meal"](https://www.robinsloan.com/notes/home-cooked-app/)
-  — the case for small, personal software built for one use rather than a
-  general audience, which is why CarCheck doesn't try to be a dealership tool.
-- Martin Kleppmann et al., ["Local-first software: you own your data, in spite
-  of the cloud"](https://www.inkandswitch.com/local-first/) (Ink & Switch,
-  2019) — shaped the persistence bar above: an inspection you wrote down
-  should feel like it's yours and still there, not something a server might
-  have dropped.
-- The [Small Technology Foundation](https://small-tech.org/research-and-development/)
-  framing of tools built at human scale — informs keeping the scope to "one
-  person, one car" rather than growing feature surface for its own sake.
+  — the case for small, personal software, why CarCheck answers "multi-user"
+  with a cookie rather than an account system.
+- Martin Kleppmann et al., ["Local-first software"](https://www.inkandswitch.com/local-first/)
+  (Ink & Switch, 2019) — shaped the persistence bar: a finding should feel
+  like it's yours and still there.
+- [Small Technology Foundation](https://small-tech.org/research-and-development/),
+  tools built at human scale — keeping identity to "this browser" rather than
+  growing an accounts system for its own sake.
 
 ## Enforced vs. judged
 
-- **Enforced** (`spec/inspections.test.ts`): an inspection and its findings
-  persist and are readable after the request that created them is long over;
-  an unknown inspection id 404s rather than erroring.
-- **Judged** (by the crit, not a test): whether entry is actually fast enough
-  "standing next to the car", and whether severity is genuinely legible at a
-  glance rather than just present.
+- **Enforced** (`spec/`): persistence across a restart; visitor isolation
+  (stranger gets 404, not a hidden link); real-time delivery within two
+  seconds; activity logging.
+- **Judged**: whether entry is fast standing next to the car, and whether
+  one cookie per inspecting pair is a reasonable reading of "multi-user"
+  rather than a dodge of it.
