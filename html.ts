@@ -7,6 +7,32 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// Hand-drawn, rounded-stroke icons as inline SVG — no icon font or library,
+// consistent with the zero-runtime-dependency stack (PROCESS.md). Each one
+// inherits currentColor so it picks up whatever text colour it's placed in,
+// and rounded linecap/linejoin is what makes them read as "friendly" rather
+// than technical line icons.
+export type IconName = "car" | "camera" | "shield" | "bolt" | "clipboard" | "wrench" | "user" | "guest" | "key" | "logout";
+
+const ICON_PATHS: Record<IconName, string> = {
+  car: '<path d="M4 16.5V12l2-5a2 2 0 0 1 1.9-1.4h8.2A2 2 0 0 1 18 7l2 5v4.5" /><path d="M3.5 16.5h17a.5.5 0 0 1 .5.5v1.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V18H6v.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V17a.5.5 0 0 1 .5-.5Z" /><circle cx="7.5" cy="14" r="1.3" /><circle cx="16.5" cy="14" r="1.3" />',
+  camera: '<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1-2h6l1 2h2.5A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5Z" /><circle cx="12" cy="13" r="3.2" /><circle cx="17" cy="10" r="0.6" fill="currentColor" stroke="none" />',
+  shield: '<path d="M12 3.5 5 6v5.5c0 4.2 3 7 7 9 4-2 7-4.8 7-9V6Z" /><path d="m9 12 2 2 4-4.2" />',
+  bolt: '<path d="M13 3 6 13h5l-1 8 7-10h-5Z" />',
+  clipboard: '<rect x="5.5" y="4.5" width="13" height="16" rx="2" /><rect x="9" y="3" width="6" height="3" rx="1" /><path d="M9 11h6M9 14.5h6M9 18h4" />',
+  wrench: '<path d="M14.7 6.3a3.5 3.5 0 0 0-4.6 4.6L4 17l2 2 6.1-6.1a3.5 3.5 0 0 0 4.6-4.6l-2.3 2.3-2-2Z" />',
+  user: '<circle cx="12" cy="8.5" r="3.2" /><path d="M5.5 19c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />',
+  guest: '<circle cx="12" cy="8.5" r="3.2" stroke-dasharray="2.2 2.2" /><path d="M5.5 19c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" stroke-dasharray="2.2 2.2" />',
+  key: '<circle cx="8" cy="15" r="3.3" /><path d="m10.3 12.7 7.2-7.2M15 7.5l2 2M17.5 5l2 2" />',
+  logout: '<path d="M14 7V5.5A1.5 1.5 0 0 0 12.5 4h-6A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20h6a1.5 1.5 0 0 0 1.5-1.5V17" /><path d="M9 12h11m0 0-3-3m3 3-3 3" />',
+};
+
+export function icon(name: IconName, opts: { size?: number; class?: string } = {}): string {
+  const size = opts.size ?? 18;
+  const cls = opts.class ? ` class="${escapeHtml(opts.class)}"` : "";
+  return `<svg${cls} width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: -3px; flex-shrink: 0;">${ICON_PATHS[name]}</svg>`;
+}
+
 export function page(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en-AU">
@@ -46,12 +72,14 @@ export function page(title: string, body: string): string {
         padding-bottom: env(safe-area-inset-bottom, 0px);
       }
       * { box-sizing: border-box; }
+      html { overflow-x: hidden; }
       body {
         font-family: var(--font-display);
         font-size: 1.05rem;
         margin: 0;
         color: var(--text);
         line-height: 1.5;
+        overflow-x: hidden;
         background:
           radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(123, 97, 255, 0.16), transparent 60%),
           radial-gradient(ellipse 1000px 700px at 100% 0%, rgba(0, 229, 255, 0.10), transparent 55%),
@@ -66,7 +94,8 @@ export function page(title: string, body: string): string {
         top: env(safe-area-inset-top, 0px);
         display: flex;
         align-items: center;
-        gap: 0.25rem;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.5rem;
         padding: 0.9rem 1.5rem;
         background: rgba(15, 23, 41, 0.85);
         backdrop-filter: blur(10px);
@@ -74,18 +103,26 @@ export function page(title: string, body: string): string {
         z-index: 10;
       }
       nav .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
         font-weight: 700;
         font-size: 1.15rem;
         letter-spacing: 0.06em;
         text-transform: uppercase;
+        text-decoration: none;
         margin-right: auto;
         color: var(--text);
+      }
+      nav .brand span {
         background: linear-gradient(90deg, var(--accent), var(--accent-2));
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
       }
-      nav .brand::before { content: "▸ "; color: var(--accent); -webkit-text-fill-color: var(--accent); }
+      nav .brand svg { color: var(--accent); }
+      .icon-accent { color: var(--accent); }
+      a svg { display: inline-block; }
       nav a {
         color: var(--text-muted);
         text-decoration: none;
@@ -269,13 +306,16 @@ export function page(title: string, body: string): string {
         main { padding: 1.25rem 1rem 2.5rem; }
         .card { padding: 1.1rem; }
         nav { padding: 0.75rem 1rem; }
+        nav .brand { font-size: 1rem; width: 100%; margin-right: 0; }
+        nav a { font-size: 0.78rem; padding: 0.35rem 0.5rem; }
         h1 { font-size: 1.5rem; }
+        .stat-row { gap: 1.1rem; }
       }
     </style>
   </head>
   <body>
     <nav>
-      <span class="brand">CarCheck</span>
+      <a href="/" class="brand">${icon("car", { size: 20 })}<span>CarCheck</span></a>
       <a href="/">Inspections</a><a href="/readme/">About</a>
     </nav>
     <main>
