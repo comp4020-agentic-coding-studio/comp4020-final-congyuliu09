@@ -36,8 +36,39 @@ where it lives --- `fly.toml`, the `Dockerfile`, the CI workflow and
   CI generates a throwaway one per run so the gating test has something to
   check. If a route ever needs to show cross-visitor data again, gate it the
   same way rather than leaving it open "because it's low-stakes."
-- **Visitor identity is a plain cookie, not a secret.** `shortId()` in
-  `routes.ts` is the only form a visitor id should ever appear in HTML or
-  logs --- the full id is enough to view that visitor's data (there's no
-  password behind it), so it shouldn't be handed around any more than it
-  already is by the cookie itself.
+- **Visitor identity is a plain cookie, not a secret, unless it's an account.**
+  `shortId()` in `routes.ts` is the only form a visitor id should ever appear
+  in HTML or logs. A guest id has no password behind it; an account id
+  (`accounts.id`) does, via `auth.ts`'s `password_hash` --- either way, the
+  bare id itself still isn't treated as a capability secret, so it's never
+  the thing standing between a visitor and someone else's data (ownership
+  checks are).
+
+## Rules added for accounts and photos
+
+- **Registering a guest promotes their existing id; it never creates a new
+  one.** `registerAccount` in `auth.ts` takes the caller's current
+  `visitor_id` cookie value as the account's id. Never generate a fresh id at
+  registration --- that would orphan everything the guest already recorded
+  under the old id, silently.
+- **Passwords are hashed with `node:crypto`'s `scrypt`, never stored or
+  logged in plain text.** No bcrypt/argon2 dependency --- consistent with the
+  zero-runtime-dependency stack. If you ever add a "forgot password" flow,
+  it still can't recover the original password, only reset it.
+- **A finding's owner is derived through `findingOwner()`, never assumed.**
+  Findings and photos don't carry their own `owner_id` column; ownership is
+  always inspection.owner_id, reached by one hop. Don't add a duplicate
+  owner field to `findings` or `finding_photos` --- a second copy of
+  ownership is a second place it can drift out of sync with the first.
+- **The 9-photos-per-finding cap is enforced in `addPhoto` (`db.ts`), not
+  just the upload form.** `<input multiple>` and the per-request remaining
+  count in the UI are conveniences; a flood of files in one multipart
+  request must still stop accepting at 9, which is why the check happens on
+  every insert, not once per request.
+- **Only `image/jpeg`, `image/png`, `image/webp` and `image/gif` are
+  accepted as photo uploads**, checked against the browser-supplied
+  `Content-Type` in `routes.ts`. This is a weak check (a client can lie
+  about content type) but it's a sufficient one for a low-stakes photo
+  store with no further processing of the bytes --- don't start trusting the
+  stored `content_type` for anything more sensitive than the `img` tag's
+  own `src` without re-deriving it from the bytes first.
