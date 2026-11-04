@@ -14,17 +14,26 @@ function parseCookies(header: string | undefined): Record<string, string> {
   return out;
 }
 
-// Tells visitors apart without accounts: a random id set on first visit and
-// sent back on every later one, in or out of this repo's test runner. It
-// identifies who recorded what (the home list is scoped to it, and every
-// finding/log entry is attributed to it); it isn't a capability secret, so it
-// doesn't need to be kept out of logs the way a session token protecting
-// someone else's data would.
+// Tells visitors apart: a random id, set on first visit, that's either a bare
+// guest id or — once registered or logged in — an account id from auth.ts.
+// Either way it identifies who recorded what (the home list is scoped to it,
+// findings/log entries are attributed to it); it isn't a capability secret on
+// its own (the account behind it is protected by a password, not by the id
+// staying hidden), so it doesn't need the same handling as a session token.
 export function getOrCreateVisitorId(req: IncomingMessage, res: ServerResponse): string {
   const existing = parseCookies(req.headers.cookie)[COOKIE_NAME];
   if (existing) return existing;
+  return setVisitorId(res, randomUUID());
+}
 
-  const id = randomUUID();
+export function getVisitorId(req: IncomingMessage): string | undefined {
+  return parseCookies(req.headers.cookie)[COOKIE_NAME];
+}
+
+// Used by registration (the guest id becomes the account id, so nothing it
+// already owns needs to move) and by login (swaps the browser's cookie to
+// the account id being logged into, on this device only).
+export function setVisitorId(res: ServerResponse, id: string): string {
   res.setHeader(
     "set-cookie",
     `${COOKIE_NAME}=${id}; Path=/; Max-Age=${60 * 60 * 24 * 365}; HttpOnly; SameSite=Lax`,

@@ -8,6 +8,6 @@
 FROM node:24-alpine
 
 WORKDIR /app
-COPY server.ts db.ts routes.ts html.ts session.ts live.ts README.md ./
+COPY server.ts db.ts routes.ts html.ts session.ts live.ts auth.ts multipart.ts README.md ./
 
 CMD ["node", "server.ts"]
