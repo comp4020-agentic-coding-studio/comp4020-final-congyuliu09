@@ -60,7 +60,16 @@ function redirect(res: ServerResponse, location: string): void {
 }
 
 function notFound(res: ServerResponse): void {
-  send(res, 404, page("Not found", "<h1>Not found</h1><p>No inspection with that id.</p>"));
+  send(
+    res,
+    404,
+    page(
+      "Not found",
+      `<h1 style="color: var(--high);">404</h1>
+       <p class="lede">No inspection with that id — whether it never existed or it isn't yours, this is what you get either way.</p>
+       <p><a class="btn-link" href="/">Back to inspections</a></p>`,
+    ),
+  );
 }
 
 function inspectionListPage(db: DatabaseSync, visitorId: string): string {
@@ -77,13 +86,14 @@ function inspectionListPage(db: DatabaseSync, visitorId: string): string {
     .join("");
   return page(
     "CarCheck",
-    `<h1>CarCheck</h1>
-     <p>Your inspections, as <code>${shortId(visitorId)}</code> — only you can see or add to these.</p>
-     <p><a href="/inspections/new">+ New inspection</a></p>
+    `<h1>Inspections</h1>
+     <p class="lede">Signed in as <span class="chip">${shortId(visitorId)}</span> — only you can see or add to these.</p>
+     <p><a class="btn-link" href="/inspections/new">+ New inspection</a></p>
+     <h2>Garage</h2>
      ${
        inspections.length === 0
-         ? "<p>No inspections yet.</p>"
-         : `<table><thead><tr><th>Vehicle</th><th>Year</th><th>Odometer</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>`
+         ? '<div class="card"><p class="empty">No inspections yet. Start your first walk-around.</p></div>'
+         : `<div class="table-wrap"><table><thead><tr><th>Vehicle</th><th>Year</th><th>Odometer</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table></div>`
      }`,
   );
 }
@@ -92,16 +102,17 @@ function newInspectionFormPage(): string {
   return page(
     "New inspection",
     `<h1>New inspection</h1>
+     <p class="lede">Log the vehicle before you start finding things wrong with it.</p>
      <form method="post" action="/inspections">
        <label for="make">Make</label>
-       <input id="make" name="make" required />
+       <input id="make" name="make" required autofocus />
        <label for="model">Model</label>
        <input id="model" name="model" required />
        <label for="year">Year</label>
        <input id="year" name="year" type="number" min="1900" max="2100" required />
        <label for="odometer">Odometer (km)</label>
        <input id="odometer" name="odometer" type="number" min="0" required />
-       <p><button type="submit">Create inspection</button></p>
+       <button type="submit">Start inspection</button>
      </form>`,
   );
 }
@@ -110,7 +121,7 @@ function findingRowHtml(f: { category: string; description: string; severity: Se
   return `<tr>
         <td>${escapeHtml(f.category)}</td>
         <td>${escapeHtml(f.description)}</td>
-        <td class="severity-${f.severity}">${f.severity}</td>
+        <td><span class="badge severity-${f.severity}">${f.severity}</span></td>
         <td>${new Date(f.created_at).toLocaleString()}</td>
       </tr>`;
 }
@@ -124,15 +135,28 @@ function inspectionDetailPage(db: DatabaseSync, id: string, visitorId: string): 
   const findings = listFindings(db, id);
   const findingRows = findings.map(findingRowHtml).join("");
   const severityOptions = SEVERITIES.map((s) => `<option value="${s}">${s}</option>`).join("");
+  const highCount = findings.filter((f) => f.severity === "high").length;
+  const mediumCount = findings.filter((f) => f.severity === "medium").length;
+  const lowCount = findings.filter((f) => f.severity === "low").length;
 
   return page(
     `${inspection.make} ${inspection.model}`,
-    `<h1>${escapeHtml(inspection.make)} ${escapeHtml(inspection.model)} (${inspection.year})</h1>
-     <p>Odometer: ${inspection.odometer.toLocaleString()} km · recorded ${new Date(inspection.created_at).toLocaleString()}</p>
+    `<h1>${escapeHtml(inspection.make)} ${escapeHtml(inspection.model)} <span style="color: var(--text-muted); font-weight: 600;">'${inspection.year}</span></h1>
+     <p class="lede"><span class="live-dot"></span>live · recorded ${new Date(inspection.created_at).toLocaleString()}</p>
+     <div class="card">
+       <div class="stat-row">
+         <div class="stat"><div class="label">Odometer</div><div class="value">${inspection.odometer.toLocaleString()} km</div></div>
+         <div class="stat"><div class="label">High</div><div class="value" style="color: var(--high);">${highCount}</div></div>
+         <div class="stat"><div class="label">Medium</div><div class="value" style="color: var(--medium);">${mediumCount}</div></div>
+         <div class="stat"><div class="label">Low</div><div class="value" style="color: var(--low);">${lowCount}</div></div>
+       </div>
+     </div>
      <h2>Findings</h2>
-     <table id="findings-table"><thead><tr><th>Category</th><th>Description</th><th>Severity</th><th>Recorded</th></tr></thead>
-       <tbody id="findings-body">${findingRows}</tbody></table>
-     <p id="findings-empty" ${findings.length === 0 ? "" : "hidden"}>No findings recorded yet.</p>
+     <div class="table-wrap">
+       <table id="findings-table"><thead><tr><th>Category</th><th>Description</th><th>Severity</th><th>Recorded</th></tr></thead>
+         <tbody id="findings-body">${findingRows}</tbody></table>
+     </div>
+     <p id="findings-empty" class="empty" ${findings.length === 0 ? "" : "hidden"}>No findings recorded yet.</p>
      <fieldset>
        <legend>Add a finding</legend>
        <form method="post" action="/inspections/${inspection.id}/findings">
@@ -142,7 +166,7 @@ function inspectionDetailPage(db: DatabaseSync, id: string, visitorId: string): 
          <input id="description" name="description" required />
          <label for="severity">Severity</label>
          <select id="severity" name="severity">${severityOptions}</select>
-         <p><button type="submit">Add finding</button></p>
+         <button type="submit">Log finding</button>
        </form>
      </fieldset>
      <script>
@@ -154,7 +178,10 @@ function inspectionDetailPage(db: DatabaseSync, id: string, visitorId: string): 
        events.addEventListener("finding", (e) => {
          const data = JSON.parse(e.data);
          document.getElementById("findings-empty").hidden = true;
-         document.getElementById("findings-body").insertAdjacentHTML("beforeend", data.html);
+         const tbody = document.getElementById("findings-body");
+         tbody.insertAdjacentHTML("beforeend", data.html);
+         const row = tbody.lastElementChild;
+         if (row) row.classList.add("just-landed");
        });
      </script>`,
   );
@@ -271,11 +298,11 @@ function logsPage(db: DatabaseSync): string {
   return page(
     "Activity log",
     `<h1>Activity log</h1>
-     <p>Server-side record of who did what; written on every mutation, independent of any browser's UI. This is what the crit narrates from.</p>
+     <p class="lede">Server-side record of who did what; written on every mutation, independent of any browser's UI. This is what the crit narrates from.</p>
      ${
        entries.length === 0
-         ? "<p>No activity yet.</p>"
-         : `<table><thead><tr><th>When (UTC)</th><th>Visitor</th><th>Action</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`
+         ? '<div class="card"><p class="empty">No activity yet.</p></div>'
+         : `<div class="table-wrap"><table><thead><tr><th>When (UTC)</th><th>Visitor</th><th>Action</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>`
      }`,
   );
 }
